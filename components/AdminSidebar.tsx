@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
+  FiBriefcase,
   FiChevronLeft,
   FiChevronRight,
   FiLink,
@@ -14,6 +15,7 @@ import {
 import { signOut } from "@/api/client/auth.api";
 
 const navItems = [
+  { href: "/businesses", label: "Businesses", icon: FiBriefcase },
   { href: "/referrals", label: "Referrals", icon: FiLink },
 ];
 

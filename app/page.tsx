@@ -6,5 +6,5 @@ export default async function Home() {
   if (!session?.user) {
     redirect("/login");
   }
-  redirect("/referrals");
+  redirect("/businesses");
 }
