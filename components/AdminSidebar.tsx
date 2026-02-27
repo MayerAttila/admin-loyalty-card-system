@@ -1,21 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   FiChevronLeft,
   FiChevronRight,
   FiLink,
+  FiLogOut,
   FiShield,
   FiStar,
 } from "react-icons/fi";
+import { signOut } from "@/api/client/auth.api";
 
 const navItems = [
   { href: "/referrals", label: "Referrals", icon: FiLink },
 ];
 
 const AdminSidebar = () => {
+  const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -120,6 +123,21 @@ const AdminSidebar = () => {
               </p>
             ) : null}
           </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              router.push("/login");
+            }}
+            title="Sign out"
+            aria-label="Sign out"
+            className={`flex w-full items-center gap-3 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-primary transition hover:brightness-110 ${
+              collapsed ? "justify-center" : ""
+            }`}
+          >
+            <FiLogOut className="h-5 w-5 shrink-0 text-primary" />
+            {!collapsed ? <span className="whitespace-nowrap">Sign out</span> : null}
+          </button>
         </div>
       </aside>
     </>
@@ -127,4 +145,3 @@ const AdminSidebar = () => {
 };
 
 export default AdminSidebar;
-

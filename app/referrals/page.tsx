@@ -1,6 +1,13 @@
+import { redirect } from "next/navigation";
+import { getAdminSession } from "@/lib/auth";
 import ReferralLinksClient from "./ReferralLinksClient";
 
-export default function ReferralsPage() {
+export default async function ReferralsPage() {
+  const session = await getAdminSession();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
   return (
     <section className="space-y-6">
       <header>
@@ -18,4 +25,3 @@ export default function ReferralsPage() {
     </section>
   );
 }
-

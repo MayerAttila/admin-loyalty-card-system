@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { FiCopy, FiRefreshCw, FiSearch } from "react-icons/fi";
 import Button from "@/components/Button";
@@ -97,6 +98,7 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export default function ReferralLinksClient() {
+  const router = useRouter();
   const [links, setLinks] = useState<ReferralLinkRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -112,10 +114,24 @@ export default function ReferralLinksClient() {
     const run = async () => {
       try {
         const data = await getReferralLinks();
-        if (!cancelled) setLinks(data);
+        if (!cancelled) {
+          setLinks(data);
+        }
       } catch (error) {
         console.error("getReferralLinks failed", error);
-        if (!cancelled) toast.error(getErrorMessage(error, "Unable to load referral links."));
+        if (!cancelled) {
+          const status =
+            typeof error === "object" &&
+            error !== null &&
+            "response" in error &&
+            (error as { response?: { status?: number } }).response?.status;
+          if (status === 401 || status === 403) {
+            router.replace(status === 401 ? "/login" : "/login?switch=1");
+            return;
+          } else {
+            toast.error(getErrorMessage(error, "Unable to load referral links."));
+          }
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -124,7 +140,7 @@ export default function ReferralLinksClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -480,4 +496,3 @@ export default function ReferralLinksClient() {
     </div>
   );
 }
-

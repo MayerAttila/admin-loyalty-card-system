@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import AdminSidebar from "@/components/AdminSidebar";
+import AdminLayoutShell from "@/components/AdminLayoutShell";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,16 +31,7 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-primary text-contrast antialiased`}
       >
-        <div className="min-h-screen bg-primary">
-          <div className="mx-auto flex min-h-screen max-w-[1600px]">
-            <AdminSidebar />
-            <main className="min-w-0 flex-1 p-4 md:p-6">
-              <div className="rounded-2xl border border-accent-3 bg-accent-1/40 p-4 md:p-6">
-                {children}
-              </div>
-            </main>
-          </div>
-        </div>
+        <AdminLayoutShell>{children}</AdminLayoutShell>
         <ToastContainer
           position="bottom-right"
           autoClose={2500}
