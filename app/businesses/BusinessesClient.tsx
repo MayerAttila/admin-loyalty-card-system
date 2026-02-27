@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiSearch } from "react-icons/fi";
+import { FiSearch, FiTag, FiUser, FiX } from "react-icons/fi";
 import { toast } from "react-toastify";
-import DataTable, { type DataTableColumn } from "@/components/DataTable";
 import {
   getAdminBusinesses,
   type AdminBusinessRecord,
 } from "@/api/client/adminBusiness.api";
+import {
+  getAdminSubscriptionHistory,
+  type AdminSubscriptionHistoryItem,
+} from "@/api/client/subscriptionHistory.api";
+import DataTable, { type DataTableColumn } from "@/components/DataTable";
 
 const formatDateTime = (iso: string | null | undefined) => {
   if (!iso) return "N/A";
@@ -31,6 +35,38 @@ const formatSubscription = (row: AdminBusinessRecord) => {
   return `${status}${intervalLabel}`;
 };
 
+const getSubscriptionType = (row: AdminBusinessRecord) => {
+  const status = (row.subscription.status || "NONE").toUpperCase();
+  const interval = row.subscription.interval?.toLowerCase();
+
+  if (status === "TRIAL") return "Trial";
+  if (status === "NONE") return "No subscription";
+
+  if (interval === "month") return "Monthly";
+  if (interval === "year") return "Annual";
+  if (interval) return interval.charAt(0).toUpperCase() + interval.slice(1);
+
+  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+};
+
+const getStatusBadgeClassName = (statusValue: string | null | undefined) => {
+  const status = (statusValue || "NONE").toUpperCase();
+  if (status === "ACTIVE") {
+    return "border-emerald-400/30 bg-emerald-500/10 text-emerald-200";
+  }
+  if (status === "TRIAL") {
+    return "border-sky-400/30 bg-sky-500/10 text-sky-200";
+  }
+  if (status === "CANCELED") {
+    return "border-contrast/20 bg-contrast/5 text-contrast/65";
+  }
+  if (status === "INCOMPLETE" || status === "PAST_DUE") {
+    return "border-amber-400/30 bg-amber-500/10 text-amber-200";
+  }
+
+  return "border-contrast/20 bg-contrast/5 text-contrast/65";
+};
+
 const getErrorStatus = (error: unknown) =>
   typeof error === "object" &&
   error !== null &&
@@ -48,11 +84,35 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     : fallback;
 };
 
+const formatHistoryStatus = (value: string | null | undefined) => {
+  const normalized = (value ?? "").trim().toUpperCase();
+  return normalized && normalized !== "NONE" ? normalized : "None";
+};
+
 export default function BusinessesClient() {
   const router = useRouter();
   const [rows, setRows] = useState<AdminBusinessRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [selectedBusiness, setSelectedBusiness] = useState<AdminBusinessRecord | null>(null);
+  const [historyRows, setHistoryRows] = useState<AdminSubscriptionHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedBusiness) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [selectedBusiness]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +142,45 @@ export default function BusinessesClient() {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (!selectedBusiness?.id) return;
+    let cancelled = false;
+
+    const run = async () => {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const data = await getAdminSubscriptionHistory({
+          businessId: selectedBusiness.id,
+          page: 1,
+          pageSize: 200,
+        });
+        if (!cancelled) {
+          setHistoryRows(data.items ?? []);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        const status = getErrorStatus(error);
+        if (status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (status === 403) {
+          router.replace("/login?switch=1");
+          return;
+        }
+        setHistoryError(getErrorMessage(error, "Unable to load billing history."));
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, selectedBusiness?.id]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -100,83 +199,92 @@ export default function BusinessesClient() {
     );
   }, [rows, search]);
 
-  const columns = useMemo<DataTableColumn<AdminBusinessRecord>[]>(
+  const historyColumns = useMemo<DataTableColumn<AdminSubscriptionHistoryItem>[]>(
     () => [
       {
-        key: "name",
-        label: "Business",
+        key: "createdAt",
+        label: "Time",
         sortable: true,
-        width: 260,
+        width: 190,
         render: (_, row) => (
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-contrast">{row.name}</p>
-            <p className="truncate text-xs text-contrast/60">
-              Registered: {formatDateTime(row.createdAt)}
-            </p>
-          </div>
+          <span className="text-sm text-contrast/85">{formatDateTime(row.createdAt)}</span>
         ),
-        sortValue: (row) => row.name,
+        sortValue: (row) => new Date(row.createdAt).getTime(),
       },
       {
-        key: "owner",
-        label: "Owner",
-        width: 260,
+        key: "eventType",
+        label: "Event",
+        sortable: true,
+        width: 200,
         render: (_, row) => (
           <div className="min-w-0">
             <p className="truncate font-medium text-contrast/90">
-              {row.owner?.name || "N/A"}
+              {row.eventType || "status.sync"}
             </p>
-            <p className="truncate text-xs text-contrast/60">
-              {row.owner?.email || "No owner account"}
-            </p>
-          </div>
-        ),
-      },
-      {
-        key: "referral",
-        label: "Promo code",
-        width: 170,
-        sortable: true,
-        render: (_, row) =>
-          row.referral ? (
-            <span className="inline-flex rounded-full border border-brand/35 bg-brand/10 px-2 py-0.5 text-xs font-semibold text-brand">
-              {row.referral.code}
-            </span>
-          ) : (
-            <span className="text-sm text-contrast/60">None</span>
-          ),
-        sortValue: (row) => row.referral?.code ?? "",
-      },
-      {
-        key: "subscription",
-        label: "Subscription",
-        width: 240,
-        sortable: true,
-        render: (_, row) => (
-          <div className="min-w-0">
-            <p className="truncate font-medium text-contrast/90">
-              {formatSubscription(row)}
-            </p>
-            <p className="truncate text-xs text-contrast/60">
-              {row.subscription.currentPeriodEnd
-                ? `Renews: ${formatDateTime(row.subscription.currentPeriodEnd)}`
-                : row.subscription.trialEndsAt
-                  ? `Trial ends: ${formatDateTime(row.subscription.trialEndsAt)}`
-                  : "No active billing period"}
+            <p className="truncate text-xs uppercase tracking-wide text-contrast/60">
+              {row.source}
             </p>
           </div>
         ),
-        sortValue: (row) => formatSubscription(row),
+        sortValue: (row) => row.eventType ?? "",
       },
       {
-        key: "updatedAt",
-        label: "Updated",
+        key: "status",
+        label: "Status change",
+        sortable: true,
         width: 180,
-        sortable: true,
         render: (_, row) => (
-          <span className="text-sm text-contrast/80">{formatDateTime(row.updatedAt)}</span>
+          <span className="font-medium text-contrast/85">
+            {formatHistoryStatus(row.previousStatus)} {"->"}{" "}
+            {formatHistoryStatus(row.nextStatus)}
+          </span>
         ),
-        sortValue: (row) => new Date(row.updatedAt).getTime(),
+        sortValue: (row) =>
+          `${formatHistoryStatus(row.previousStatus)}-${formatHistoryStatus(row.nextStatus)}`,
+      },
+      {
+        key: "interval",
+        label: "Interval",
+        width: 160,
+        render: (_, row) => (
+          <span className="text-sm text-contrast/80">
+            {row.previousInterval || "N/A"} {"->"} {row.nextInterval || "N/A"}
+          </span>
+        ),
+      },
+      {
+        key: "price",
+        label: "Price",
+        width: 240,
+        render: (_, row) => (
+          <span className="block truncate text-xs text-contrast/75">
+            {row.previousPriceId || "N/A"} {"->"} {row.nextPriceId || "N/A"}
+          </span>
+        ),
+      },
+      {
+        key: "cancelAtPeriodEnd",
+        label: "Cancel End",
+        width: 130,
+        render: (_, row) => (
+          <span className="text-sm text-contrast/80">
+            {row.cancelAtPeriodEnd === null
+              ? "N/A"
+              : row.cancelAtPeriodEnd
+                ? "Yes"
+                : "No"}
+          </span>
+        ),
+      },
+      {
+        key: "stripeSubscriptionId",
+        label: "Stripe Sub",
+        width: 220,
+        render: (_, row) => (
+          <span className="block truncate text-xs text-contrast/70">
+            {row.stripeSubscriptionId || "N/A"}
+          </span>
+        ),
       },
     ],
     []
@@ -205,17 +313,178 @@ export default function BusinessesClient() {
         </label>
       </div>
 
-      <div className="mt-5">
-        <DataTable
-          data={filtered}
-          columns={columns}
-          storageKey="admin-businesses-table"
-          emptyMessage={
-            !isLoading ? "No registered businesses found." : "Loading businesses..."
-          }
-        />
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {isLoading
+          ? Array.from({ length: 6 }).map((_, index) => (
+              <article
+                key={`business-skeleton-${index}`}
+                className="rounded-xl border border-accent-3 bg-primary/35 p-4"
+              >
+                <div className="h-4 w-1/3 animate-pulse rounded bg-accent-2" />
+                <div className="mt-3 h-6 w-2/3 animate-pulse rounded bg-accent-2" />
+                <div className="mt-4 space-y-2">
+                  <div className="h-4 w-full animate-pulse rounded bg-accent-2" />
+                  <div className="h-4 w-5/6 animate-pulse rounded bg-accent-2" />
+                  <div className="h-4 w-4/6 animate-pulse rounded bg-accent-2" />
+                </div>
+              </article>
+            ))
+          : null}
+
+        {!isLoading && filtered.length === 0 ? (
+          <div className="rounded-xl border border-accent-3 bg-primary/25 p-5 text-sm text-contrast/70 sm:col-span-2 xl:col-span-3">
+            No registered businesses found.
+          </div>
+        ) : null}
+
+        {!isLoading
+          ? filtered.map((row) => {
+              const statusLabel = formatSubscription(row);
+              const subscriptionType = getSubscriptionType(row);
+
+              return (
+                <article
+                  key={row.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedBusiness(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedBusiness(row);
+                    }
+                  }}
+                  className="cursor-pointer rounded-xl border border-accent-3 bg-primary/35 p-4 shadow-[0_10px_24px_rgba(0,0,0,0.14)] transition hover:border-brand/35 hover:bg-accent-1/70"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-[0.16em] text-contrast/60">
+                        Business
+                      </p>
+                      <h3 className="truncate text-lg font-semibold text-contrast">
+                        {row.name}
+                      </h3>
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClassName(
+                        row.subscription.status
+                      )}`}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <FiUser className="mt-0.5 h-4 w-4 shrink-0 text-contrast/55" />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-contrast/90">
+                          {row.owner?.name || "No owner"}
+                        </p>
+                        <p className="truncate text-xs text-contrast/60">
+                          {row.owner?.email || "No owner account"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-accent-3 bg-accent-1/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-[0.14em] text-contrast/60">
+                        Subscription type
+                      </p>
+                      <p className="truncate font-semibold text-contrast/90">
+                        {subscriptionType}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-accent-3 bg-accent-1/40 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <FiTag className="h-4 w-4 text-contrast/55" />
+                        <p className="text-xs uppercase tracking-[0.14em] text-contrast/60">
+                          Promo code
+                        </p>
+                      </div>
+                      <p className="truncate font-semibold text-brand">
+                        {row.referral?.code || "None"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border border-accent-3 bg-accent-1/40 px-3 py-2">
+                      <p className="text-xs uppercase tracking-[0.14em] text-contrast/60">
+                        Billing
+                      </p>
+                      <p className="mt-1 text-xs text-contrast/75">
+                        {row.subscription.currentPeriodEnd
+                          ? `Renews: ${formatDateTime(row.subscription.currentPeriodEnd)}`
+                          : row.subscription.trialEndsAt
+                            ? `Trial ends: ${formatDateTime(row.subscription.trialEndsAt)}`
+                            : "No active billing period"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between border-t border-accent-3 pt-3 text-xs text-contrast/55">
+                    <span>Created {formatDateTime(row.createdAt)}</span>
+                    <span>Updated {formatDateTime(row.updatedAt)}</span>
+                  </div>
+                </article>
+              );
+            })
+          : null}
       </div>
+
+      {selectedBusiness ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4">
+          <div className="flex h-[92vh] w-[min(96vw,1700px)] flex-col overflow-hidden rounded-2xl border border-accent-3 bg-accent-1 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-accent-3 px-5 py-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.16em] text-contrast/60">Billing</p>
+                <h3 className="mt-1 text-xl font-semibold text-brand">
+                  {selectedBusiness.name} History
+                </h3>
+                <p className="mt-1 text-xs text-contrast/65">
+                  Subscription and billing state changes for this business.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close billing history"
+                onClick={() => {
+                  setSelectedBusiness(null);
+                  setHistoryRows([]);
+                  setHistoryError(null);
+                }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-accent-3 bg-primary/40 text-contrast/80 transition hover:border-brand/35 hover:text-brand"
+              >
+                <FiX className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto p-5 [scrollbar-width:thin] [scrollbar-color:rgb(var(--color-accent-4)/0.7)_transparent] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[rgb(var(--color-accent-4)/0.7)]">
+              {historyLoading ? (
+                <p className="text-sm text-contrast/70">Loading billing history...</p>
+              ) : null}
+
+              {!historyLoading && historyError ? (
+                <p className="text-sm text-red-300">{historyError}</p>
+              ) : null}
+
+              {!historyLoading && !historyError ? (
+                <DataTable
+                  key={`billing-history-${selectedBusiness.id}`}
+                  data={historyRows}
+                  columns={historyColumns}
+                  storageKey={`admin-business-billing-history-${selectedBusiness.id}`}
+                  emptyMessage="No billing history entries found for this business."
+                  defaultSortKey="createdAt"
+                  defaultSortDirection="desc"
+                  respectStoredSort={false}
+                  viewportOffsetPx={320}
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
-
