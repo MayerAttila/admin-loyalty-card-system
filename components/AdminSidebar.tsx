@@ -7,6 +7,7 @@ import {
   FiBriefcase,
   FiChevronLeft,
   FiChevronRight,
+  FiClock,
   FiLink,
   FiLogOut,
   FiShield,
@@ -16,6 +17,7 @@ import { signOut } from "@/api/client/auth.api";
 
 const navItems = [
   { href: "/businesses", label: "Businesses", icon: FiBriefcase },
+  { href: "/subscription-history", label: "Subscription history", icon: FiClock },
   { href: "/referrals", label: "Referrals", icon: FiLink },
 ];
 
